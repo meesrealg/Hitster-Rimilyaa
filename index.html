@@ -124,7 +124,7 @@
 
   <div id="screen-scan" class="hide">
     <div id="reader"></div>
-    <p class="hint">Richt de camera op de QR-code&hellip;</p>
+    <p class="hint" id="scan-status">Camera starten&hellip;</p>
     <div class="row"><button class="btn ghost" onclick="stopScan(true)">Annuleren</button></div>
   </div>
 
@@ -218,8 +218,10 @@ async function togglePause(){
   isPaused=!isPaused; document.getElementById("pauseBtn").textContent = isPaused ? "Hervat" : "Pauze";
 }
 let videoEl=null, scanRAF=null, scanStream=null, scanBusy=false;
+function setStatus(t){ const el=document.getElementById("scan-status"); if(el) el.textContent=t; }
 async function startScan(){
   show("scan");
+  setStatus("Camera starten\u2026");
   const reader=document.getElementById("reader");
   reader.innerHTML="";
   videoEl=document.createElement("video");
@@ -236,23 +238,29 @@ async function startScan(){
   scanBusy=false;
   const tick=()=>{
     if(!videoEl){ return; }
-    if(!scanBusy && window.jsQR && videoEl.readyState>=2 && videoEl.videoWidth){
-      canvas.width=videoEl.videoWidth; canvas.height=videoEl.videoHeight;
-      ctx.drawImage(videoEl,0,0,canvas.width,canvas.height);
+    if(!scanBusy && videoEl.readyState>=2 && videoEl.videoWidth){
+      if(!window.jsQR){ setStatus("Scanner laadt nog\u2026"); scanRAF=requestAnimationFrame(tick); return; }
+      const vw=videoEl.videoWidth, vh=videoEl.videoHeight;
+      const sc=Math.min(1, 640/Math.max(vw,vh));
+      const w=Math.round(vw*sc), h=Math.round(vh*sc);
+      canvas.width=w; canvas.height=h;
+      ctx.drawImage(videoEl,0,0,w,h);
       try{
-        const img=ctx.getImageData(0,0,canvas.width,canvas.height);
-        const code=jsQR(img.data,img.width,img.height,{inversionAttempts:"dontInvert"});
+        const img=ctx.getImageData(0,0,w,h);
+        const code=jsQR(img.data,w,h,{inversionAttempts:"attemptBoth"});
         if(code && code.data){ scanBusy=true; onScan(code.data); return; }
       }catch(e){}
+      setStatus("Richt de camera op de QR-code\u2026");
     }
     scanRAF=requestAnimationFrame(tick);
   };
   scanRAF=requestAnimationFrame(tick);
 }
 async function onScan(text){
+  setStatus("Code gelezen \u2713");
   await stopScan(false);
   const id = parseTrackId(text);
-  if(!id){ toast("Geen Spotify-nummer in deze QR-code."); show("idle"); return; }
+  if(!id){ toast("QR gelezen, maar geen Spotify-track: "+text.slice(0,45)); show("idle"); return; }
   toast("Kaartje gevonden, afspelen\u2026");
   await playTrack(id);
 }
