@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/html5-qrcode" defer></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
 <style>
   :root{
     --ink:#143a82;
@@ -220,12 +220,15 @@ async function togglePause(){
 async function startScan(){
   show("scan"); if(!window.Html5Qrcode){ setTimeout(startScan,300); return; }
   html5qr = new Html5Qrcode("reader",{verbose:false});
-  try{ await html5qr.start({facingMode:"environment"},{fps:10, qrbox:{width:220,height:220}}, onScan, ()=>{}); }
+  try{ await html5qr.start({facingMode:"environment"},
+    {fps:10, qrbox:(vw,vh)=>{const m=Math.floor(Math.min(vw,vh)*0.75);return{width:m,height:m};}, aspectRatio:1.0},
+    onScan, ()=>{}); }
   catch(e){ toast("Geen toegang tot de camera."); show("idle"); }
 }
 async function onScan(text){
   const id = parseTrackId(text); await stopScan(false);
   if(!id){ toast("Geen Spotify-nummer in deze QR-code."); show("idle"); return; }
+  toast("Kaartje gevonden, afspelen\u2026");
   await playTrack(id);
 }
 async function stopScan(back){
