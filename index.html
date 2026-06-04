@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js" defer></script>
 <style>
   :root{
     --ink:#143a82;
@@ -217,22 +217,50 @@ async function togglePause(){
   await fetch("https://api.spotify.com/v1/me/player/"+ep,{method:"PUT",headers:h});
   isPaused=!isPaused; document.getElementById("pauseBtn").textContent = isPaused ? "Hervat" : "Pauze";
 }
+let videoEl=null, scanRAF=null, scanStream=null, scanBusy=false;
 async function startScan(){
-  show("scan"); if(!window.Html5Qrcode){ setTimeout(startScan,300); return; }
-  html5qr = new Html5Qrcode("reader",{verbose:false});
-  try{ await html5qr.start({facingMode:"environment"},
-    {fps:10, qrbox:(vw,vh)=>{const m=Math.floor(Math.min(vw,vh)*0.75);return{width:m,height:m};}, aspectRatio:1.0},
-    onScan, ()=>{}); }
-  catch(e){ toast("Geen toegang tot de camera."); show("idle"); }
+  show("scan");
+  const reader=document.getElementById("reader");
+  reader.innerHTML="";
+  videoEl=document.createElement("video");
+  videoEl.setAttribute("playsinline","true"); videoEl.muted=true; videoEl.autoplay=true;
+  videoEl.style.width="100%"; videoEl.style.display="block";
+  reader.appendChild(videoEl);
+  const canvas=document.createElement("canvas");
+  const ctx=canvas.getContext("2d",{willReadFrequently:true});
+  try{
+    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}, audio:false});
+  }catch(e){ toast("Geen toegang tot de camera."); show("idle"); return; }
+  videoEl.srcObject=scanStream;
+  try{ await videoEl.play(); }catch(e){}
+  scanBusy=false;
+  const tick=()=>{
+    if(!videoEl){ return; }
+    if(!scanBusy && window.jsQR && videoEl.readyState>=2 && videoEl.videoWidth){
+      canvas.width=videoEl.videoWidth; canvas.height=videoEl.videoHeight;
+      ctx.drawImage(videoEl,0,0,canvas.width,canvas.height);
+      try{
+        const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+        const code=jsQR(img.data,img.width,img.height,{inversionAttempts:"dontInvert"});
+        if(code && code.data){ scanBusy=true; onScan(code.data); return; }
+      }catch(e){}
+    }
+    scanRAF=requestAnimationFrame(tick);
+  };
+  scanRAF=requestAnimationFrame(tick);
 }
 async function onScan(text){
-  const id = parseTrackId(text); await stopScan(false);
+  await stopScan(false);
+  const id = parseTrackId(text);
   if(!id){ toast("Geen Spotify-nummer in deze QR-code."); show("idle"); return; }
   toast("Kaartje gevonden, afspelen\u2026");
   await playTrack(id);
 }
 async function stopScan(back){
-  if(html5qr){ try{await html5qr.stop(); html5qr.clear();}catch(e){} html5qr=null; }
+  if(scanRAF){ cancelAnimationFrame(scanRAF); scanRAF=null; }
+  if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
+  if(videoEl){ videoEl.srcObject=null; videoEl=null; }
+  const reader=document.getElementById("reader"); if(reader) reader.innerHTML="";
   if(back) show("idle");
 }
 function show(name){
